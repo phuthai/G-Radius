@@ -1,0 +1,35 @@
+sql {
+    driver = "rlm_sql_mysql"
+    dialect = "mysql"
+    
+    # Connection info
+    server = "10.0.0.4"
+    port = 3306
+    login = "${MYSQL_USER}"
+    password = "${MYSQL_PASSWORD}"
+    radius_db = "${MYSQL_DATABASE}"
+    
+    # Connection pool
+    pool {
+        start = 5
+        min = 4
+        max = 10
+        spare = 3
+        uses = 0
+        lifetime = 0
+        idle_timeout = 60
+    }
+    
+    # Table names
+    acct_table1 = "radacct"
+    acct_table2 = "radacct"
+    postauth_table = "radpostauth"
+    authcheck_table = "radcheck"
+    authreply_table = "radreply"
+    groupcheck_table = "radgroupcheck"
+    groupreply_table = "radgroupreply"
+    usergroup_table = "radusergroup"
+    
+    # Read database-specific queries
+    $INCLUDE ${modconfdir}/sql/main/${dialect}/queries.conf
+}

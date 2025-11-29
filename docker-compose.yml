@@ -1,0 +1,215 @@
+version: '3.8'
+
+services:
+  # WireGuard VPN Server - ONLY exposed port
+  wireguard:
+    image: linuxserver/wireguard:latest
+    container_name: gradius-wireguard
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Bangkok
+      - SERVERURL=${WG_SERVER_ENDPOINT}
+      - SERVERPORT=51820
+      - PEERS=10
+      - PEERDNS=192.168.55.1
+      - INTERNAL_SUBNET=192.168.55.0/24
+      # Enable routing between networks
+      - ALLOWEDIPS=192.168.55.0/24,10.0.0.0/24
+    volumes:
+      - wireguard_config:/config
+      - /lib/modules:/lib/modules
+      - ./wireguard/wg-routing-setup.sh:/config/wg-routing-setup.sh:ro
+    ports:
+      - "51820:51820/udp" # ONLY exposed port!
+    networks:
+      vpn_network:
+        ipv4_address: 10.0.0.6
+        ipv6_address: fd00:10::6
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.forwarding=1
+      - net.ipv6.conf.all.forwarding=1
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "wg", "show" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MySQL Database - VPN-only access
+  mysql:
+    image: mysql:8.0
+    container_name: gradius-mysql
+    cap_add:
+      - NET_ADMIN
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro
+      - ./mysql/my.cnf:/etc/mysql/conf.d/custom.cnf:ro
+    networks:
+      vpn_network:
+        ipv4_address: 10.0.0.4
+    command: --bind-address=10.0.0.4
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 512M
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "10.0.0.4" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Backend API - VPN-only access
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: gradius-backend
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - NODE_ENV=production
+      - MYSQL_IP=10.0.0.4
+      - MYSQL_PORT=3306
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - JWT_SECRET=${JWT_SECRET}
+      - API_PORT=5000
+      - BACKEND_IP=10.0.0.3
+      - WG_SERVER_PUBLIC_KEY=${WG_SERVER_PUBLIC_KEY}
+      - WG_SERVER_ENDPOINT=${WG_SERVER_ENDPOINT}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - backend_logs:/var/log/gradius
+    networks:
+      vpn_network:
+        ipv4_address: 10.0.0.3
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # FreeRADIUS - VPN-only access
+  freeradius:
+    build:
+      context: ./freeradius
+      dockerfile: Dockerfile
+    container_name: gradius-freeradius
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - MYSQL_HOST=10.0.0.4
+      - MYSQL_PORT=3306
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - RADIUS_SECRET=${RADIUS_SECRET}
+    volumes:
+      - radius_logs:/var/log/radius
+    networks:
+      vpn_network:
+        ipv4_address: 10.0.0.5
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Frontend (React + Nginx) - VPN-only access
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend.Dockerfile
+    container_name: gradius-frontend
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      vpn_network:
+        ipv4_address: 10.0.0.2
+    depends_on:
+      - backend
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  # Docker internal network for services (dual-stack IPv4/IPv6)
+  vpn_network:
+    driver: bridge
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 10.0.0.0/24
+          gateway: 10.0.0.1
+        - subnet: fd00:10::/64
+          gateway: fd00:10::1
+
+volumes:
+  mysql_data:
+    driver: local
+  wireguard_config:
+    driver: local
+  radius_logs:
+    driver: local
+  backend_logs:
+    driver: local

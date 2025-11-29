@@ -1,0 +1,110 @@
+.navbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    padding: var(--spacing-lg) 0;
+    transition: all var(--transition-base);
+}
+
+.navbar-scrolled {
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+    padding: var(--spacing-md) 0;
+}
+
+.navbar-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.navbar-logo {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    font-size: var(--font-size-xl);
+    font-weight: 800;
+    text-decoration: none;
+    color: var(--color-text-primary);
+    transition: transform var(--transition-base);
+}
+
+.navbar-logo:hover {
+    transform: scale(1.05);
+}
+
+.navbar-links {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xl);
+}
+
+.navbar-links a {
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    font-weight: 500;
+    transition: color var(--transition-fast);
+    position: relative;
+}
+
+.navbar-links a:not(.btn)::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 0;
+    width: 0;
+    height: 2px;
+    background: var(--gradient-primary);
+    transition: width var(--transition-base);
+}
+
+.navbar-links a:not(.btn):hover {
+    color: var(--color-text-primary);
+}
+
+.navbar-links a:not(.btn):hover::after {
+    width: 100%;
+}
+
+.navbar-mobile-toggle {
+    display: none;
+    background: none;
+    border: none;
+    color: var(--color-text-primary);
+    cursor: pointer;
+    padding: var(--spacing-sm);
+}
+
+@media (max-width: 768px) {
+    .navbar-mobile-toggle {
+        display: block;
+    }
+
+    .navbar-links {
+        position: fixed;
+        top: 70px;
+        left: 0;
+        right: 0;
+        flex-direction: column;
+        background: var(--glass-bg);
+        backdrop-filter: blur(12px);
+        border-bottom: 1px solid var(--glass-border);
+        padding: var(--spacing-xl);
+        gap: var(--spacing-lg);
+        transform: translateY(-100%);
+        opacity: 0;
+        pointer-events: none;
+        transition: all var(--transition-base);
+    }
+
+    .navbar-links-open {
+        transform: translateY(0);
+        opacity: 1;
+        pointer-events: all;
+    }
+}
